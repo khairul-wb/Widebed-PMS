@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard · Widebed PMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+
+    <main class="content" x-data="dashboard" x-cloak>
+      <div class="loading-bar" x-show="loading"></div>
+
+      <div class="page-head">
+        <div>
+          <h1 x-text="view === 'director' ? 'Director dashboard' : 'Finance dashboard'"></h1>
+          <div class="sub" x-text="subtitle()"></div>
+        </div>
+        <div class="head-tools">
+          <span class="chip" x-show="data" x-text="data && data.lastUpload ? 'Last eZee upload: ' + stamp(data.lastUpload) : 'No eZee upload yet'"></span>
+          <select class="select" x-model="propertyId" @change="load()" aria-label="Property">
+            <option value="all">All properties</option>
+            <template x-for="p in properties" :key="p.id"><option :value="p.id" :selected="p.id === propertyId" x-text="p.name"></option></template>
+          </select>
+          <select class="select" x-model="month" @change="load()" aria-label="Month">
+            <template x-for="m in months" :key="m"><option :value="m" :selected="m === month" x-text="monthName(m)"></option></template>
+          </select>
+          <select class="select" x-show="role === 'director'" x-model="view" @change="load()" aria-label="View as">
+            <option value="director">View as: Director</option>
+            <option value="finance">View as: Finance</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="notice error" x-show="error" x-text="error"></div>
+
+      <template x-if="data">
+        <div>
+          <!-- KPI cards -->
+          <section class="kpis">
+            <div class="card kpi">
+              <div class="label">Rental income</div>
+              <div class="value" x-text="rm(data.rentalIncome)"></div>
+              <div class="hint" x-text="`From eZee, checked out in ${shortMonth(month)}`"></div>
+            </div>
+            <div class="card kpi">
+              <div class="label">Owner payouts</div>
+              <div class="value" x-text="data.statementsDone ? rm(data.balToPay) : '—'"></div>
+              <div class="hint" x-text="data.statementsDone ? 'To pay, from completed statements' : 'Shown once statements are completed'"></div>
+            </div>
+            <template x-if="view === 'finance'">
+              <div class="card kpi">
+                <div class="label">Statements completed</div>
+                <div class="value" x-text="`${data.statementsDone} of ${data.unitCount}`"></div>
+                <div class="hint" x-text="data.statementsDone < data.unitCount ? 'Approve & complete not done yet' : 'All done'"></div>
+              </div>
+            </template>
+            <template x-if="view === 'director'">
+              <div class="card kpi">
+                <div class="label">Open tickets</div>
+                <div class="value">—</div>
+                <div class="hint">Issues comes in a later increment</div>
+              </div>
+            </template>
+            <div class="card kpi">
+              <div class="label" x-text="view === 'director' ? 'Waiting on Director' : 'Needs attention'"></div>
+              <div class="value" :class="attentionCount() ? 'alert' : ''" x-text="attentionCount()"></div>
+              <div class="hint" x-text="view === 'director' ? 'Approvals only a Director can give' : 'Ctrip amounts, negatives, set-up'"></div>
+            </div>
+          </section>
+
+          <!-- FINANCE -->
+          <template x-if="view === 'finance'">
+            <div class="grid-2">
+              <div class="stack">
+                <section class="card">
+                  <div class="card-head"><h2>Month-end progress</h2><a href="#" class="link" @click.prevent="soon('Month-end payout')">Open Month-end payout ›</a></div>
+                  <div class="steps">
+                    <template x-for="s in data.steps" :key="s.n">
+                      <div class="step" :class="{ done: s.done, current: s.current }">
+                        <span class="dot" x-text="s.done ? '✓' : s.n"></span><span x-text="s.label"></span>
+                      </div>
+                    </template>
+                  </div>
+                  <div class="note" x-text="data.progressNote"></div>
+                </section>
+                <section class="card">
+                  <div class="card-head"><h2>Statements by status</h2><a href="#" class="link" @click.prevent="soon('Month-end payout')">View all ›</a></div>
+                  <div class="rows">
+                    <div class="row"><span>Fixed rent</span><span class="pill blue" x-text="data.byStatus.fixedRent"></span></div>
+                    <div class="row"><span>Draft</span><span class="pill grey" x-text="data.byStatus.draft"></span></div>
+                    <div class="row"><span>Negative</span><span class="pill red" x-text="data.byStatus.negative"></span></div>
+                    <div class="row"><span>Estimated</span><span class="pill amber" x-text="data.byStatus.estimated"></span></div>
+                    <div class="row"><span>Completed</span><span class="pill green" x-text="data.byStatus.completed"></span></div>
+                  </div>
+                </section>
+              </div>
+              <div class="stack">
+                <section class="card">
+                  <div class="card-head"><h2>Needs attention</h2></div>
+                  <div class="rows">
+                    <template x-for="(a, i) in data.attention.slice(0, 8)" :key="i">
+                      <div class="row"><span x-text="a.text"></span><span class="r" x-text="a.tag"></span></div>
+                    </template>
+                    <div class="empty" x-show="!data.attention.length">Nothing needs attention for this month.</div>
+                    <div class="note" x-show="data.attention.length > 8" x-text="`+ ${data.attention.length - 8} more on Month-end payout`"></div>
+                  </div>
+                </section>
+                <section class="card">
+                  <div class="card-head"><h2>Expenses added this month</h2><a href="#" class="link" @click.prevent="soon('Expenses & Reimbursements')">Expenses ›</a></div>
+                  <div class="rows">
+                    <template x-for="e in data.recentExpenses" :key="e.id">
+                      <div class="row">
+                        <span x-text="`${ddmm(e.date)} · ${e.unitCode} · ${e.description || e.type}`"></span>
+                        <span class="r" :class="e.signedAmount < 0 ? '' : 'pos'" x-text="signed(e.signedAmount)"></span>
+                      </div>
+                    </template>
+                    <div class="empty" x-show="!data.recentExpenses.length">No expenses added for this month yet.</div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </template>
+
+          <!-- DIRECTOR -->
+          <template x-if="view === 'director'">
+            <div class="grid-2">
+              <div class="stack">
+                <section class="card">
+                  <div class="card-head"><h2>Waiting on Director</h2></div>
+                  <div class="rows">
+                    <template x-for="(a, i) in directorItems()" :key="i">
+                      <div class="row"><span x-text="a.text"></span><button class="btn" @click="soon('Portfolio')">Set up</button></div>
+                    </template>
+                    <div class="empty" x-show="!directorItems().length">Nothing is waiting on you.</div>
+                  </div>
+                </section>
+                <section class="card">
+                  <div class="card-head"><h2>Month-end at a glance</h2><a href="#" class="link" @click.prevent="soon('Month-end payout')">Month-end payout ›</a></div>
+                  <div class="steps">
+                    <template x-for="s in data.steps" :key="s.n">
+                      <div class="step" :class="{ done: s.done, current: s.current }">
+                        <span class="dot" x-text="s.done ? '✓' : s.n"></span><span x-text="s.label"></span>
+                      </div>
+                    </template>
+                  </div>
+                  <div class="note">Read-only here. Finance completes the month.</div>
+                </section>
+              </div>
+              <div class="stack">
+                <section class="card">
+                  <div class="card-head"><h2>Open tickets by role</h2></div>
+                  <div class="empty">Issues comes in a later increment.</div>
+                </section>
+                <section class="card">
+                  <div class="card-head"><h2>Team activity</h2><a href="staff.html" class="link">Staff accounts ›</a></div>
+                  <div class="rows">
+                    <template x-for="u in team" :key="u.id">
+                      <div class="row"><span x-text="u.displayName || u.email"></span><span class="r" x-text="when(u.lastLoginAt)"></span></div>
+                    </template>
+                    <div class="empty" x-show="!team.length">No sign-ins recorded yet.</div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </template>
+
+          <!-- Quick actions -->
+          <section class="card quick">
+            <div class="card-head"><h2>Quick actions</h2></div>
+            <div class="actions" x-show="view === 'finance'">
+              <button class="btn btn-primary" @click="soon('Upload eZee report')">Upload eZee report</button>
+              <button class="btn" @click="soon('Add expense')">Add expense</button>
+              <button class="btn" @click="soon('Month-end payout')">Open Month-end payout</button>
+              <button class="btn" @click="soon('Daily export')">Download daily export</button>
+            </div>
+            <div class="actions" x-show="view === 'director'">
+              <button class="btn btn-primary" @click="soon('Add property')">Add property</button>
+              <a class="btn" href="staff.html?add=1">Invite staff</a>
+              <button class="btn" @click="soon('Audit log')">Open Audit log</button>
+            </div>
+          </section>
+        </div>
+      </template>
+    </main>
+  </div>
+</div>
+
+<script type="module">
+  import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/module.esm.js';
+  import { requireRole } from './js/firebase.js';
+  import { renderShell, notBuilt } from './js/shell.js';
+  import { loadProperties, loadMonth, loadTeamActivity } from './js/dashboard-data.js';
+  import { rm, signed, monthName, shortMonth, ddmm, monthOffset, when, stamp } from './js/format.js';
+
+  const me = await requireRole();
+  const name = me.name;
+  renderShell({ role: me.role, name, active: 'Dashboard' });
+
+  Alpine.data('dashboard', () => ({
+    role: me.role,
+    view: me.role,                      // Director can "View as" Finance
+    month: monthOffset(-1),             // month-end work is for last month
+    months: Array.from({ length: 12 }, (_, i) => monthOffset(-i)),
+    propertyId: 'all',
+    properties: [],
+    data: null, team: [], loading: true, error: '',
+    rm, signed, monthName, shortMonth, ddmm, when, stamp,
+
+    async init() {
+      try {
+        this.properties = await loadProperties();
+        if (me.role === 'finance' && this.properties.length === 1) this.propertyId = this.properties[0].id;
+      } catch (e) { this.fail(e); }
+      await this.load();
+    },
+    async load() {
+      this.loading = true; this.error = '';
+      try {
+        this.data = await loadMonth({ propertyId: this.propertyId, month: this.month, propertyIds: this.properties.map(p => p.id) });
+        if (this.view === 'director') this.team = await loadTeamActivity();
+      } catch (e) { this.fail(e); }
+      this.loading = false;
+    },
+    fail(e) {
+      console.error(e);
+      this.error = e.code === 'permission-denied'
+        ? 'Firestore refused the read. Check the security rules are deployed and your role is set.'
+        : e.code === 'failed-precondition'
+          ? 'Firestore needs an index for this view. Open the browser console (F12) and click the link it gives.'
+          : 'Could not load the dashboard: ' + (e.message || e);
+    },
+    subtitle() {
+      const p = this.propertyId === 'all' ? 'All properties' : (this.properties.find(x => x.id === this.propertyId)?.name || '');
+      return `${monthName(this.month)} · ${p} · ${this.view === 'director' ? 'the whole business at a glance' : 'month-end and owner payouts'}`;
+    },
+    directorItems() { return this.data ? this.data.attention.filter(a => a.tag === 'Set up') : []; },
+    attentionCount() { return this.view === 'director' ? this.directorItems().length : (this.data ? this.data.attention.length : 0); },
+    soon: notBuilt
+  }));
+  Alpine.start();
+</script>
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Staff accounts · Widebed PMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+
+    <main class="content" x-data="staffPage" x-cloak>
+      <div class="loading-bar" x-show="loading"></div>
+
+      <div class="page-head">
+        <div>
+          <h1>Staff accounts</h1>
+          <div class="sub">Who can sign in to the Widebed PMS, and what each person can do.</div>
+        </div>
+        <button class="btn btn-primary" @click="openAdd()">+ Add staff</button>
+      </div>
+
+      <div class="notice error" x-show="error" x-text="error"></div>
+      <div class="notice ok" x-show="okMsg" x-text="okMsg"></div>
+
+      <div class="toolbar">
+        <input class="input" type="search" placeholder="Search name or email" x-model="search" aria-label="Search staff">
+        <div class="pills">
+          <template x-for="f in filters" :key="f.key">
+            <button class="pill-btn" :class="{ on: filter === f.key }" @click="filter = f.key" x-text="`${f.label} (${count(f.key)})`"></button>
+          </template>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="u in shown()" :key="u.id">
+              <tr class="clickable" @click="openEdit(u)">
+                <td><b x-text="u.displayName || '(no name)'"></b><span class="you" x-show="u.id === myUid">You</span></td>
+                <td class="muted" x-text="u.email"></td>
+                <td><span class="pill" :class="roleColour(u.role)" x-text="ROLE_LABEL[u.role] || 'No role'"></span></td>
+                <td><span class="status-dot" :class="{ off: u.active === false }" x-text="u.active === false ? 'Switched off' : 'Active'"></span></td>
+                <td class="muted" x-text="u.lastLoginAt ? when(u.lastLoginAt) : 'Never'"></td>
+                <td style="text-align:right"><button class="btn" @click.stop="openEdit(u)">Edit</button></td>
+              </tr>
+            </template>
+            <tr x-show="!loading && !shown().length"><td colspan="6" class="muted">No staff match.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="card" style="margin-top:24px">
+        <div class="card-head"><h2>What each role can do</h2></div>
+        <div class="role-list">
+          <div><b>Director</b><span>Everything, including Staff accounts and Director Override. Can sign in now.</span></div>
+          <div><b>Finance</b><span>Upload eZee, expenses, month-end payout, exports. Can sign in now.</span></div>
+          <div><b>IT</b><span>View-only, personal details hidden. Signs in once the IT pages are built.</span></div>
+          <div><b>Operations</b><span>Issues, sales leads, booking forms. Later increment.</span></div>
+          <div><b>HR</b><span>SOP pages, complaints, onboarding. Later increment.</span></div>
+          <div><b>Procurement</b><span>The 10 Fillout form links. Later increment.</span></div>
+        </div>
+      </section>
+
+      <!-- Add / Edit panel -->
+      <template x-if="panelOpen">
+        <div>
+          <div class="drawer-back" @click="close()"></div>
+          <aside class="drawer" role="dialog" :aria-label="panel.mode === 'add' ? 'Add staff' : 'Edit staff'" @keydown.escape.window="close()">
+            <div class="drawer-head">
+              <h2 x-text="panel.mode === 'add' ? 'Add staff' : 'Edit staff'"></h2>
+              <button class="icon-btn" @click="close()" aria-label="Close">×</button>
+            </div>
+            <form class="drawer-body" id="staffForm" @submit.prevent="save()">
+              <div class="notice error" x-show="panel.error" x-text="panel.error"></div>
+              <div class="field">
+                <label for="sName">Full name</label>
+                <input class="input" id="sName" x-model="panel.displayName" required>
+              </div>
+              <div class="field">
+                <label for="sEmail">Work email</label>
+                <input class="input" id="sEmail" type="email" x-model="panel.email" :readonly="panel.mode === 'edit'" required>
+                <span class="help" x-show="panel.mode === 'add'">They get an email with a link to set their own password.</span>
+                <span class="help" x-show="panel.mode === 'edit'">An email can't be changed. Switch this account off and add a new one instead.</span>
+              </div>
+              <div class="field">
+                <label for="sRole">Role</label>
+                <select class="input" id="sRole" x-model="panel.role" :disabled="panel.isMe">
+                  <template x-for="r in ROLES" :key="r"><option :value="r" :selected="r === panel.role" x-text="ROLE_LABEL[r]"></option></template>
+                </select>
+                <span class="help" x-show="panel.isMe">You can't change your own role. Ask another Director.</span>
+                <span class="help" x-show="!panel.isMe && !canSignIn(panel.role)">This role can't sign in yet. Its pages come in a later increment.</span>
+              </div>
+
+              <template x-if="panel.mode === 'edit'">
+                <div>
+                  <label class="switch">
+                    <span><b>Account active</b><br><span class="help">Switched off = can't sign in or see anything. Their history stays.</span></span>
+                    <input type="checkbox" x-model="panel.active" :disabled="panel.isMe">
+                  </label>
+                  <div class="field">
+                    <label for="sReason">Reason for the change</label>
+                    <textarea class="input" id="sReason" x-model="panel.reason" placeholder="e.g. Joined Finance team, left the company"></textarea>
+                    <span class="help">Saved in the audit log with your name.</span>
+                  </div>
+                  <hr class="divider">
+                  <button type="button" class="btn" @click="sendReset()" :disabled="panel.busy">Send password reset email</button>
+                </div>
+              </template>
+            </form>
+            <div class="drawer-foot">
+              <button class="btn" @click="close()">Cancel</button>
+              <button class="btn btn-primary" type="submit" form="staffForm" :disabled="panel.busy"
+                x-text="panel.busy ? 'Saving…' : (panel.mode === 'add' ? 'Add staff' : 'Save changes')"></button>
+            </div>
+          </aside>
+        </div>
+      </template>
+    </main>
+  </div>
+</div>
+
+<script type="module">
+  import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/module.esm.js';
+  import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+  import { getAuth, createUserWithEmailAndPassword, updateProfile, signOut, sendPasswordResetEmail }
+    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+  import { collection, doc, getDocs, setDoc, updateDoc, addDoc, serverTimestamp, writeBatch }
+    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  import { auth, db, requireRole, ROLE_LABEL, ALLOWED_ROLES } from './js/firebase.js';
+  import { firebaseConfig } from './js/firebase-config.js';
+  import { renderShell } from './js/shell.js';
+  import { when } from './js/format.js';
+
+  const me = await requireRole(['director']);
+  renderShell({ role: me.role, name: me.name, active: 'Staff accounts' });
+
+  const ROLES = ['director', 'finance', 'it', 'operations', 'hr', 'procurement'];
+  const AUTH_ERRORS = {
+    'auth/email-already-in-use': 'This email already has a login. If the person is missing from this list, ask Khairul to add their staff record with tools/set-role.js.',
+    'auth/invalid-email': 'That email address does not look right.',
+    'auth/network-request-failed': 'No internet connection. Try again.'
+  };
+
+  // Creates the login on a second, temporary Firebase app so the Director stays signed in.
+  async function createLogin(email, displayName) {
+    const temp = initializeApp(firebaseConfig, 'staff-create-' + Date.now());
+    try {
+      const tempAuth = getAuth(temp);
+      const pw = crypto.getRandomValues(new Uint32Array(4)).join('-') + 'Wb!';   // never shown; they set their own
+      const cred = await createUserWithEmailAndPassword(tempAuth, email, pw);
+      await updateProfile(cred.user, { displayName });
+      await signOut(tempAuth);
+      return cred.user.uid;
+    } finally {
+      await deleteApp(temp);
+    }
+  }
+
+  function audit(batch, action, uid, changes, reason) {
+    batch.set(doc(collection(db, 'auditLog')), {
+      at: serverTimestamp(), uid: me.user.uid, userName: me.name, role: me.role,
+      action, entity: `users/${uid}`, changes, reason: reason || ''
+    });
+  }
+
+  Alpine.data('staffPage', () => ({
+    ROLES, ROLE_LABEL, when,
+    myUid: me.user.uid,
+    users: [], loading: true, error: '', okMsg: '',
+    search: '', filter: 'active',
+    filters: [{ key: 'active', label: 'Active' }, { key: 'off', label: 'Switched off' }, { key: 'all', label: 'All' }],
+    panel: {}, panelOpen: false,
+
+    async init() {
+      await this.load();
+      if (new URLSearchParams(location.search).has('add')) this.openAdd();
+    },
+    async load() {
+      this.loading = true;
+      try {
+        const snap = await getDocs(collection(db, 'users'));
+        this.users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.displayName || a.email || '').localeCompare(b.displayName || b.email || ''));
+      } catch (e) {
+        console.error(e);
+        this.error = e.code === 'permission-denied'
+          ? 'Firestore refused the read. Check the latest security rules are deployed.'
+          : 'Could not load staff: ' + (e.message || e);
+      }
+      this.loading = false;
+    },
+    match(u, key) { return key === 'all' || (key === 'off' ? u.active === false : u.active !== false); },
+    count(key) { return this.users.filter(u => this.match(u, key)).length; },
+    shown() {
+      const q = this.search.trim().toLowerCase();
+      return this.users.filter(u => this.match(u, this.filter)
+        && (!q || (u.displayName || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)));
+    },
+    roleColour(r) { return { director: 'red', finance: 'blue', it: 'grey', operations: 'amber', hr: 'green', procurement: 'grey' }[r] || 'grey'; },
+    canSignIn(r) { return ALLOWED_ROLES.includes(r); },
+
+    openAdd() {
+      this.okMsg = '';
+      this.panelOpen = true;
+      this.panel = { mode: 'add', displayName: '', email: '', role: 'finance', active: true, reason: '', isMe: false, busy: false, error: '' };
+    },
+    openEdit(u) {
+      this.okMsg = '';
+      this.panelOpen = true;
+      this.panel = { mode: 'edit', id: u.id, original: u, displayName: u.displayName || '', email: u.email, role: u.role || 'finance',
+        active: u.active !== false, reason: '', isMe: u.id === this.myUid, busy: false, error: '' };
+    },
+    close() { if (!this.panel.busy) this.panelOpen = false; },
+
+    async save() {
+      const p = this.panel;
+      p.error = '';
+      const name = p.displayName.trim(), email = p.email.trim().toLowerCase();
+      if (!name) return p.error = 'Enter their full name.';
+      if (p.mode === 'add') {
+        if (!email) return p.error = 'Enter their work email.';
+        if (this.users.some(u => (u.email || '').toLowerCase() === email)) return p.error = 'Someone on the list already uses this email.';
+      }
+      p.busy = true;
+      try {
+        const batch = writeBatch(db);
+        if (p.mode === 'add') {
+          const uid = await createLogin(email, name);
+          batch.set(doc(db, 'users', uid), {
+            displayName: name, email, role: p.role, active: true,
+            createdAt: serverTimestamp(), createdBy: me.user.uid, createdByName: me.name
+          });
+          audit(batch, 'staff.create', uid, [{ field: 'role', old: null, new: p.role }], 'New staff account');
+          await batch.commit();
+          try { await sendPasswordResetEmail(auth, email); } catch (_) {}
+          this.okMsg = `${name} added as ${ROLE_LABEL[p.role]}. A set-password email is on its way to ${email}.`;
+        } else {
+          const o = p.original, changes = [];
+          if (name !== (o.displayName || '')) changes.push({ field: 'displayName', old: o.displayName || '', new: name });
+          if (p.role !== o.role) changes.push({ field: 'role', old: o.role || null, new: p.role });
+          if (p.active !== (o.active !== false)) changes.push({ field: 'active', old: o.active !== false, new: p.active });
+          if (!changes.length) { p.busy = false; this.panelOpen = false; return; }
+          if (!p.reason.trim()) { p.busy = false; return p.error = 'Add a short reason. It goes in the audit log.'; }
+          batch.update(doc(db, 'users', p.id), {
+            displayName: name, role: p.role, active: p.active,
+            updatedAt: serverTimestamp(), updatedBy: me.user.uid, updatedByName: me.name
+          });
+          audit(batch, 'staff.update', p.id, changes, p.reason.trim());
+          await batch.commit();
+          this.okMsg = `${name} updated. Changes apply the next time they open a page.`;
+        }
+        p.busy = false;
+        this.panelOpen = false;
+        await this.load();
+      } catch (e) {
+        console.error(e);
+        p.busy = false;
+        p.error = AUTH_ERRORS[e.code] || (e.code === 'permission-denied'
+          ? 'Firestore refused the change. Check the latest security rules are deployed.'
+          : 'Could not save: ' + (e.message || e));
+      }
+    },
+
+    async sendReset() {
+      const p = this.panel;
+      p.busy = true; p.error = '';
+      try {
+        await sendPasswordResetEmail(auth, p.email);
+        this.okMsg = `Password reset email sent to ${p.email}.`;
+        this.panelOpen = false;
+      } catch (e) { p.error = AUTH_ERRORS[e.code] || 'Could not send the email.'; }
+      p.busy = false;
+    }
+  }));
+  Alpine.start();
+</script>
+</body>
+</html>

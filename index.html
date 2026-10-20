@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Widebed PMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <main class="login-wrap">
+    <form class="login-card" id="form" novalidate>
+      <div class="brand"><div class="brand-mark">W</div><div><div class="brand-name">Widebed</div><div class="brand-sub">Property Management</div></div></div>
+      <h1>Sign in</h1>
+      <p class="lead">Use the email and password your Director set up for you.</p>
+
+      <div class="notice warn" id="configMsg" hidden>Firebase is not connected yet. Paste your web app config into <b>js/firebase-config.js</b>.</div>
+      <div class="notice error" id="err" hidden></div>
+      <div class="notice ok" id="ok" hidden></div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input class="input" id="email" type="email" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="pw">
+          <input class="input" id="password" type="password" autocomplete="current-password" required>
+          <button type="button" id="showPw">Show</button>
+        </div>
+      </div>
+      <div class="login-row">
+        <span></span>
+        <a href="#" class="link" id="forgot">Forgot password?</a>
+      </div>
+      <button class="btn btn-primary" id="submit" type="submit" style="width:100%">Sign in</button>
+      <p class="login-foot">Widebed staff only. Every sign-in is recorded.</p>
+    </form>
+  </main>
+
+  <script type="module">
+    import { auth, db, configMissing, whoAmI, profileOf, ALLOWED_ROLES } from './js/firebase.js';
+    import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut }
+      from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    const $ = id => document.getElementById(id);
+    const show = (id, text) => { ['err', 'ok'].forEach(k => $(k).hidden = true); if (text) { $(id).textContent = text; $(id).hidden = false; } };
+
+    if (configMissing) { $('configMsg').hidden = false; $('submit').disabled = true; }
+    if (new URLSearchParams(location.search).has('noaccess'))
+      show('err', 'Your account has no access to this system yet. Ask a Director to give you a role.');
+
+    // Already signed in with a working role: go straight to the dashboard.
+    if (!configMissing) whoAmI().then(me => { if (me.user && ALLOWED_ROLES.includes(me.role)) location.replace('dashboard.html'); });
+
+    $('showPw').onclick = () => {
+      const pw = $('password'); const hidden = pw.type === 'password';
+      pw.type = hidden ? 'text' : 'password'; $('showPw').textContent = hidden ? 'Hide' : 'Show';
+    };
+
+    const MESSAGES = {
+      'auth/invalid-credential': 'Email or password is wrong.',
+      'auth/invalid-email': 'That email address does not look right.',
+      'auth/user-disabled': 'This account has been switched off. Ask a Director.',
+      'auth/missing-password': 'Enter your password.',
+      'auth/too-many-requests': 'Too many tries. Wait a few minutes, or reset your password.',
+      'auth/network-request-failed': 'No internet connection. Check your connection and try again.'
+    };
+
+    $('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const email = $('email').value.trim(), password = $('password').value;
+      if (!email || !password) return show('err', 'Enter your email and password.');
+      $('submit').disabled = true; $('submit').textContent = 'Signing in…'; show();
+      try {
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        const { role } = await profileOf(cred.user);
+        if (!ALLOWED_ROLES.includes(role)) {
+          await signOut(auth);
+          throw { code: 'noaccess' };
+        }
+        try { await updateDoc(doc(db, 'users', cred.user.uid), { lastLoginAt: serverTimestamp() }); } catch (_) {}
+        location.replace('dashboard.html');
+      } catch (err) {
+        show('err', err.code === 'noaccess'
+          ? 'Your account has no access to this system yet. Ask a Director to give you a role.'
+          : (MESSAGES[err.code] || 'Could not sign in. Try again.'));
+        $('submit').disabled = false; $('submit').textContent = 'Sign in';
+      }
+    });
+
+    $('forgot').onclick = async e => {
+      e.preventDefault();
+      const email = $('email').value.trim();
+      if (!email) return show('err', 'Type your email above first, then click Forgot password.');
+      try { await sendPasswordResetEmail(auth, email); } catch (_) {}
+      // Same message either way, so nobody can test which emails have accounts.
+      show('ok', `If ${email} has an account, a reset link is on its way. Check your inbox.`);
+    };
+  </script>
+</body>
+</html>
