@@ -11,7 +11,8 @@ export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 // Offline cache: reopening a page reads from the browser first, which saves free-plan reads.
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  ignoreUndefinedProperties: true
 });
 
 // Roles that can sign in during Increment 1 (Finance MVP). Other roles can be given now

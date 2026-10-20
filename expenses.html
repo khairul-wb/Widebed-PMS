@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expenses & Reimbursements · Widebed PMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+
+    <main class="content" x-data="expensesPage" x-cloak>
+      <div class="loading-bar" x-show="loading"></div>
+
+      <div class="page-head">
+        <div>
+          <h1>Expenses & Reimbursements</h1>
+          <div class="sub">Costs taken off, and money paid back to, each owner. They land on the statement month you pick, line by line.</div>
+        </div>
+        <div class="head-tools">
+          <select class="select" x-model="propertyId" @change="load()" aria-label="Property">
+            <template x-for="p in properties" :key="p.id"><option :value="p.id" :selected="p.id === propertyId" x-text="p.name"></option></template>
+          </select>
+          <select class="select" x-model="month" @change="load()" aria-label="Statement month">
+            <template x-for="m in months" :key="m"><option :value="m" :selected="m === month" x-text="monthName(m)"></option></template>
+          </select>
+          <button class="btn btn-primary" @click="openAdd()" :disabled="completed || !units.length">+ Add line</button>
+        </div>
+      </div>
+
+      <div class="notice error" x-show="error" x-text="error"></div>
+      <div class="notice ok" x-show="okMsg" x-text="okMsg"></div>
+      <div class="notice warn" x-show="completed">This month is completed, so its lines are read-only. Add new costs to the next open month.</div>
+      <div class="notice warn" x-show="!loading && !properties.length">No properties yet. Upload an eZee report first; it creates the property and its units.</div>
+
+      <section class="kpis">
+        <div class="card kpi"><div class="label">Expenses</div><div class="value" x-text="rm(total('expense') + total('broughtForward'))"></div><div class="hint">Taken off owners</div></div>
+        <div class="card kpi"><div class="label">Reimbursements</div><div class="value" x-text="rm(total('reimburse'))"></div><div class="hint">Paid back to owners</div></div>
+        <div class="card kpi"><div class="label">Lines</div><div class="value" x-text="live().length"></div><div class="hint" x-text="`${new Set(live().map(e => e.unitId)).size} units`"></div></div>
+        <div class="card kpi"><div class="label">Brought forward</div><div class="value" x-text="rm(total('broughtForward'))"></div><div class="hint">Negative balances from last month</div></div>
+      </section>
+
+      <div class="toolbar">
+        <input class="input" type="search" placeholder="Search unit or description" x-model="search" aria-label="Search">
+        <div class="pills">
+          <template x-for="f in filters" :key="f.key">
+            <button class="pill-btn" :class="{ on: filter === f.key }" @click="filter = f.key" x-text="f.label"></button>
+          </template>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Date</th><th>Unit</th><th>Type</th><th>Description</th><th>Kind</th><th class="num">Amount (RM)</th><th>Added by</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="e in shown()" :key="e.id">
+              <tr :class="{ clickable: canEdit(e) }" @click="canEdit(e) && openEdit(e)">
+                <td x-text="dmy(e.date)"></td>
+                <td><b x-text="unitCode(e.unitId)"></b></td>
+                <td x-text="typeLabel(e.type)"></td>
+                <td x-text="e.description"></td>
+                <td><span class="pill" :class="{ expense: 'red', reimburse: 'green', broughtForward: 'amber' }[e.kind]" x-text="KINDS[e.kind]"></span></td>
+                <td class="num" :class="e.kind === 'reimburse' ? '' : 'neg-amt'" x-text="(e.kind === 'reimburse' ? '+' : '−') + amt(e.amount)"></td>
+                <td class="muted" x-text="e.auto ? 'Automatic' : (e.createdByName || '')"></td>
+                <td style="text-align:right"><button class="btn" x-show="canEdit(e)" @click.stop="openEdit(e)">Edit</button></td>
+              </tr>
+            </template>
+            <tr x-show="!loading && !shown().length"><td colspan="8" class="muted">No lines for this month yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="help">Receipts: attaching files comes with the Hostinger file storage step. For now, note the receipt number in the description.</p>
+
+      <!-- Add / Edit panel -->
+      <template x-if="panelOpen">
+        <div>
+          <div class="drawer-back" @click="close()"></div>
+          <aside class="drawer" role="dialog" :aria-label="panel.id ? 'Edit line' : 'Add line'" @keydown.escape.window="close()">
+            <div class="drawer-head">
+              <h2 x-text="panel.id ? 'Edit line' : 'Add line'"></h2>
+              <button class="icon-btn" @click="close()" aria-label="Close">×</button>
+            </div>
+            <form class="drawer-body" id="expForm" @submit.prevent="save()">
+              <div class="notice error" x-show="panel.error" x-text="panel.error"></div>
+              <div class="field">
+                <label>Kind</label>
+                <div class="pills">
+                  <button type="button" class="pill-btn" :class="{ on: panel.kind === 'expense' }" @click="panel.kind = 'expense'">Expense (taken off owner)</button>
+                  <button type="button" class="pill-btn" :class="{ on: panel.kind === 'reimburse' }" @click="panel.kind = 'reimburse'">Reimburse (paid to owner)</button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="eUnit">Unit</label>
+                <select class="input" id="eUnit" x-model="panel.unitId" required>
+                  <option value="">Choose a unit</option>
+                  <template x-for="u in units" :key="u.id"><option :value="u.id" :selected="u.id === panel.unitId" x-text="u.unitCode"></option></template>
+                </select>
+              </div>
+              <div class="grid-fields">
+                <div class="field"><label for="eDate">Date</label><input class="input" id="eDate" type="date" x-model="panel.date" required></div>
+                <div class="field">
+                  <label for="eMonth">Statement month</label>
+                  <select class="input" id="eMonth" x-model="panel.month" :disabled="!!panel.id">
+                    <template x-for="m in months" :key="m"><option :value="m" :selected="m === panel.month" x-text="monthName(m)"></option></template>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="eType">Type</label>
+                <select class="input" id="eType" x-model="panel.type">
+                  <template x-for="t in TYPES" :key="t[0]"><option :value="t[0]" :selected="t[0] === panel.type" x-text="t[1]"></option></template>
+                </select>
+              </div>
+              <div class="field"><label for="eDesc">Description</label><input class="input" id="eDesc" x-model="panel.description" placeholder="e.g. OWSS-2609-061, MFSF 09/26" required></div>
+              <div class="field"><label for="eAmt">Amount (RM)</label><input class="input" id="eAmt" type="number" step="0.01" min="0.01" x-model="panel.amount" required></div>
+              <template x-if="panel.id">
+                <div class="field"><label for="eReason">Reason for the change (audit log)</label>
+                  <textarea class="input" id="eReason" x-model="panel.reason" placeholder="e.g. Wrong amount typed, receipt says 543.40"></textarea></div>
+              </template>
+            </form>
+            <div class="drawer-foot">
+              <button class="btn" x-show="panel.id" @click="remove()" :disabled="panel.busy" style="margin-right:auto">Remove</button>
+              <button class="btn" @click="close()">Cancel</button>
+              <button class="btn btn-primary" type="submit" form="expForm" :disabled="panel.busy" x-text="panel.busy ? 'Saving…' : 'Save'"></button>
+            </div>
+          </aside>
+        </div>
+      </template>
+    </main>
+  </div>
+</div>
+
+<script type="module">
+  import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/module.esm.js';
+  import { collection, doc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  import { db, requireRole } from './js/firebase.js';
+  import { renderShell } from './js/shell.js';
+  import { loadProperties, loadUnits, loadExpenses, monthDoc, audit, friendlyError } from './js/finance-data.js';
+  import { rm, amt, dmy, monthName, monthOffset, dayOffset } from './js/format.js';
+
+  const me = await requireRole(['director', 'finance']);
+  renderShell({ role: me.role, name: me.name, active: 'Expenses & Reimbursements' });
+
+  const KINDS = { expense: 'Expense', reimburse: 'Reimburse', broughtForward: 'Brought forward' };
+  const TYPES = [['maintenance', 'Maintenance (repair work)'], ['sewerage', 'Sewerage (IWK)'], ['internet', 'Internet'], ['mfsf', 'Maintenance fee & sinking fund (MFSF)'],
+    ['insurance', 'Fire & general insurance'], ['electricity', 'Electricity (TNB)'], ['water', 'Water'], ['ownerInvoice', 'Owner invoice (OWSS)'],
+    ['procurement', 'Item bought for owner'], ['reimburse', 'Reimbursement'], ['broughtForward', 'Brought forward'], ['other', 'Other']];
+  const params = new URLSearchParams(location.search);
+
+  Alpine.data('expensesPage', () => ({
+    KINDS, TYPES, rm, amt, dmy, monthName,
+    properties: [], units: [], expenses: [],
+    propertyId: params.get('property') || '', month: params.get('month') || monthOffset(-1),
+    months: Array.from({ length: 13 }, (_, i) => monthOffset(1 - i)),
+    completed: false, loading: true, error: '', okMsg: '',
+    search: '', filter: 'all',
+    filters: [{ key: 'all', label: 'All' }, { key: 'expense', label: 'Expenses' }, { key: 'reimburse', label: 'Reimbursements' }, { key: 'broughtForward', label: 'Brought forward' }],
+    panel: {}, panelOpen: false,
+
+    async init() {
+      try {
+        this.properties = await loadProperties();
+        if (!this.properties.some(p => p.id === this.propertyId)) this.propertyId = this.properties[0]?.id || '';
+        if (!this.months.includes(this.month)) this.months.push(this.month);
+        await this.load();
+        if (params.has('add')) this.openAdd();
+      } catch (e) { this.error = friendlyError(e, 'load the page'); this.loading = false; }
+    },
+    async load() {
+      if (!this.propertyId) { this.loading = false; return; }
+      this.loading = true; this.error = '';
+      try {
+        const [units, expenses, m] = await Promise.all([loadUnits(this.propertyId), loadExpenses(this.propertyId, this.month), monthDoc(this.propertyId, this.month)]);
+        this.units = units; this.expenses = expenses; this.completed = m.status === 'completed';
+      } catch (e) { this.error = friendlyError(e, 'load expenses'); }
+      this.loading = false;
+    },
+    unitCode(id) { return this.units.find(u => u.id === id)?.unitCode || id; },
+    typeLabel(t) { return (TYPES.find(x => x[0] === t) || [, t])[1]; },
+    live() { return this.expenses.filter(e => !e.deleted); },
+    total(kind) { return this.live().filter(e => e.kind === kind).reduce((s, e) => s + Number(e.amount || 0), 0); },
+    shown() {
+      const q = this.search.trim().toLowerCase();
+      return this.live()
+        .filter(e => this.filter === 'all' || e.kind === this.filter)
+        .filter(e => !q || this.unitCode(e.unitId).toLowerCase().includes(q) || (e.description || '').toLowerCase().includes(q))
+        .sort((a, b) => this.unitCode(a.unitId).localeCompare(this.unitCode(b.unitId), 'en', { numeric: true }) || (a.date || '').localeCompare(b.date || ''));
+    },
+    canEdit(e) { return !this.completed && !e.auto; },
+
+    openAdd() {
+      this.okMsg = '';
+      const today = dayOffset(0);
+      this.panel = { id: null, kind: 'expense', unitId: '', date: today.slice(0, 7) === this.month ? today : `${this.month}-01`, month: this.month,
+        type: 'maintenance', description: '', amount: '', reason: '', busy: false, error: '' };
+      this.panelOpen = true;
+    },
+    openEdit(e) {
+      this.okMsg = '';
+      this.panel = { id: e.id, original: e, kind: e.kind, unitId: e.unitId, date: e.date, month: e.month, type: e.type, description: e.description || '',
+        amount: e.amount, reason: '', busy: false, error: '' };
+      this.panelOpen = true;
+    },
+    close() { if (!this.panel.busy) this.panelOpen = false; },
+
+    async save() {
+      const p = this.panel; p.error = '';
+      const amount = Math.round(Number(p.amount) * 100) / 100;
+      if (!p.unitId) return p.error = 'Choose the unit.';
+      if (!(amount > 0)) return p.error = 'Enter an amount above zero. Pick Reimburse for money paid to the owner.';
+      if (!p.description.trim()) return p.error = 'Add a description, e.g. the invoice number.';
+      if (p.month !== this.month && (await monthDoc(this.propertyId, p.month)).status === 'completed') return p.error = `${monthName(p.month)} is completed. Pick an open month.`;
+      const data = { propertyId: this.propertyId, unitId: p.unitId, date: p.date, month: p.month, kind: p.kind, type: p.type,
+        description: p.description.trim(), amount };
+      p.busy = true;
+      try {
+        const b = writeBatch(db);
+        if (!p.id) {
+          const ref = doc(collection(db, 'expenses'));
+          b.set(ref, { ...data, auto: false, sourceStatementId: null, files: [], deleted: false,
+            createdBy: me.user.uid, createdByName: me.name, createdAt: serverTimestamp() });
+          audit(b, me, { action: 'expense.create', entity: `expenses/${ref.id}`, propertyId: this.propertyId, month: p.month,
+            changes: [{ field: 'amount', old: null, new: amount }] });
+        } else {
+          const o = p.original;
+          const changes = Object.keys(data).filter(k => String(o[k] ?? '') !== String(data[k] ?? '')).map(k => ({ field: k, old: o[k] ?? null, new: data[k] }));
+          if (!changes.length) { p.busy = false; this.panelOpen = false; return; }
+          if (!p.reason.trim()) { p.busy = false; return p.error = 'Add a short reason. It goes in the audit log.'; }
+          b.update(doc(db, 'expenses', p.id), { ...data, updatedBy: me.user.uid, updatedByName: me.name, updatedAt: serverTimestamp() });
+          audit(b, me, { action: 'expense.update', entity: `expenses/${p.id}`, propertyId: this.propertyId, month: p.month, changes, reason: p.reason.trim() });
+        }
+        await b.commit();
+        this.okMsg = `${p.id ? 'Updated' : 'Added'}: ${this.unitCode(p.unitId)}, ${p.description.trim()}, RM ${amt(amount)}` + (p.month !== this.month ? ` (on ${monthName(p.month)})` : '') + '.';
+        p.busy = false; this.panelOpen = false;
+        await this.load();
+      } catch (e) { p.busy = false; p.error = friendlyError(e, 'save'); }
+    },
+
+    // Nothing is hard-deleted: the line is marked removed, with a reason.
+    async remove() {
+      const p = this.panel; p.error = '';
+      if (!p.reason.trim()) return p.error = 'Type the reason for removing it first.';
+      p.busy = true;
+      try {
+        const b = writeBatch(db);
+        b.update(doc(db, 'expenses', p.id), { deleted: true, deletedReason: p.reason.trim(), updatedBy: me.user.uid, updatedByName: me.name, updatedAt: serverTimestamp() });
+        audit(b, me, { action: 'expense.remove', entity: `expenses/${p.id}`, propertyId: this.propertyId, month: p.original.month,
+          changes: [{ field: 'deleted', old: false, new: true }], reason: p.reason.trim() });
+        await b.commit();
+        this.okMsg = 'Line removed.';
+        p.busy = false; this.panelOpen = false;
+        await this.load();
+      } catch (e) { p.busy = false; p.error = friendlyError(e, 'remove'); }
+    }
+  }));
+  Alpine.start();
+</script>
+</body>
+</html>

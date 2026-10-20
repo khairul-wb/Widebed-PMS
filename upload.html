@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upload eZee report · Widebed PMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+
+    <main class="content" x-data="uploadPage" x-cloak>
+      <div class="loading-bar" x-show="busy"></div>
+
+      <div class="page-head">
+        <div>
+          <h1>Upload eZee report</h1>
+          <div class="sub">Detail Revenue report from eZee, saved as CSV. Bookings count in the month they check out.</div>
+        </div>
+      </div>
+
+      <div class="notice error" x-show="error" x-text="error"></div>
+
+      <section class="card">
+        <div class="steps">
+          <template x-for="(s, i) in ['Choose file', 'Check', 'Save', 'Done']" :key="i">
+            <div class="step" :class="{ done: step > i + 1, current: step === i + 1 }">
+              <span class="dot" x-text="step > i + 1 ? '✓' : i + 1"></span><span x-text="s"></span>
+            </div>
+          </template>
+        </div>
+
+        <!-- 1. Choose file -->
+        <template x-if="step === 1">
+          <div>
+            <label class="dropzone" :class="{ over: dragging }"
+                   @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="dragging = false; pick($event.dataTransfer.files[0])">
+              <b>Drop the eZee CSV here, or click to choose it</b>
+              <span>eZee › Reports › Detail Revenue report › Export as CSV</span>
+              <input type="file" accept=".csv,text/csv" hidden @change="pick($event.target.files[0])">
+            </label>
+          </div>
+        </template>
+
+        <!-- 2. Check -->
+        <template x-if="step === 2 && check">
+          <div>
+            <div class="card-head"><h2 x-text="fileName"></h2><button class="link" @click="reset()">Choose another file</button></div>
+            <div class="summary-grid">
+              <div><b x-text="check.active"></b><span>bookings to save</span></div>
+              <div><b x-text="check.newCount"></b><span>new</span></div>
+              <div><b x-text="check.active - check.newCount"></b><span>already in the PMS (updated)</span></div>
+              <div><b x-text="check.cancelled"></b><span>cancelled (no room number)</span></div>
+              <div><b x-text="check.ctrip"></b><span>Ctrip needing an amount</span></div>
+            </div>
+
+            <div class="rows">
+              <div class="row"><span>Checkout months in this file</span>
+                <span class="r wrap" x-text="check.months.map(m => `${monthName(m.month)} (${m.count})`).join(', ')"></span></div>
+              <template x-for="p in check.properties" :key="p.code">
+                <div class="row">
+                  <span x-text="p.isNew ? `New property found: rooms starting with ${p.code}` : `Property: ${p.name}`"></span>
+                  <template x-if="p.isNew">
+                    <span><input class="input" style="height:34px;width:200px" x-model="p.name" placeholder="Property name, e.g. D'Majestic"></span>
+                  </template>
+                </div>
+              </template>
+              <div class="row" x-show="check.newUnits.length"><span>New units (added as "not set up")</span>
+                <span class="r wrap" x-text="check.newUnits.join(', ')"></span></div>
+              <div class="row" x-show="check.locked.length"><span class="neg-amt">Skipped: month already completed</span>
+                <span class="r wrap" x-text="`${check.locked.length} bookings in ${[...new Set(check.locked.map(b => monthName(b.departureMonth)))].join(', ')}`"></span></div>
+              <div class="row" x-show="check.noUnit.length"><span class="neg-amt">Room name not recognised (saved without a unit)</span>
+                <span class="r wrap" x-text="check.noUnit.map(b => b.reservationNo).join(', ')"></span></div>
+            </div>
+            <div class="actions" style="margin-top:16px">
+              <button class="btn btn-primary" @click="save()" :disabled="busy || !check.toSave.length || check.properties.some(p => p.isNew && !p.name.trim())">Save to the PMS</button>
+              <button class="btn" @click="reset()">Cancel</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 3. Saving -->
+        <template x-if="step === 3">
+          <div>
+            <div class="progress"><div :style="`width:${progress}%`"></div></div>
+            <div class="note" x-text="`Saving… ${progress}%`"></div>
+          </div>
+        </template>
+
+        <!-- 4. Done -->
+        <template x-if="step === 4 && done">
+          <div>
+            <div class="notice ok" x-text="done.message"></div>
+            <div class="actions">
+              <template x-for="m in done.months" :key="m">
+                <a class="btn btn-primary" :href="`month-end.html?property=${done.propertyId}&month=${m}`" x-text="`Open Month-end payout · ${monthName(m)}`"></a>
+              </template>
+              <button class="btn" @click="reset()">Upload another file</button>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <div class="grid-2" style="margin-top:20px">
+        <section class="card" id="daily">
+          <div class="card-head"><h2>Daily finance export</h2></div>
+          <p class="help" style="margin-top:0">Short-term stays (29 nights or less) that checked out on the date, sorted by property then unit. Tourism tax has its own column.</p>
+          <div class="toolbar">
+            <input class="input" type="date" x-model="exportDate" aria-label="Checkout date">
+            <select class="select" x-model="exportProperty" aria-label="Property">
+              <option value="all">All properties</option>
+              <template x-for="p in properties" :key="p.id"><option :value="p.id" x-text="p.name"></option></template>
+            </select>
+            <button class="btn" @click="dailyExport()" :disabled="busy">Download CSV</button>
+          </div>
+          <div class="note" x-text="exportNote"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Recent uploads</h2></div>
+          <div class="rows">
+            <template x-for="h in history" :key="h.id">
+              <div class="row">
+                <span><b x-text="h.fileName"></b><br><span class="help" x-text="`${(h.months || []).map(monthName).join(', ')} · ${h.counts?.bookings ?? 0} bookings · ${h.uploadedByName || ''}`"></span></span>
+                <span class="r" x-text="stamp(h.uploadedAt)"></span>
+              </div>
+            </template>
+            <div class="empty" x-show="!history.length">No uploads yet.</div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script type="module">
+  import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/module.esm.js';
+  import { collection, doc, getDocs, query, where, orderBy, limit, writeBatch, serverTimestamp }
+    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  import { db, requireRole } from './js/firebase.js';
+  import { renderShell } from './js/shell.js';
+  import { parseCSV, readEzee, bookingPTO, effectiveRates, DEFAULT_OTA, DM_STARTER, unitIdOf, byUnit, r2 } from './js/engine.js';
+  import { loadProperties, loadUnits, loadSetup, audit, friendlyError, download, toCSV } from './js/finance-data.js';
+  import { monthName, stamp, dayOffset } from './js/format.js';
+
+  const me = await requireRole(['director', 'finance']);
+  renderShell({ role: me.role, name: me.name, active: 'Upload eZee report' });
+
+  const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const CHUNK = 200;   // bookings per batch: 2 writes each, under Firestore's 500 limit
+
+  Alpine.data('uploadPage', () => ({
+    monthName, stamp,
+    step: 1, dragging: false, busy: false, error: '', progress: 0,
+    fileName: '', parsed: null, check: null, done: null,
+    properties: [], history: [],
+    exportDate: dayOffset(-1), exportProperty: 'all', exportNote: '',
+
+    async init() {
+      try {
+        this.properties = await loadProperties();
+        await this.loadHistory();
+      } catch (e) { this.error = friendlyError(e, 'load the page'); }
+    },
+    async loadHistory() {
+      const snap = await getDocs(query(collection(db, 'importBatches'), orderBy('uploadedAt', 'desc'), limit(8)));
+      this.history = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+    reset() { this.step = 1; this.check = null; this.parsed = null; this.done = null; this.error = ''; this.progress = 0; },
+
+    async pick(file) {
+      if (!file) return;
+      this.error = ''; this.fileName = file.name;
+      if (!/\.csv$/i.test(file.name)) { this.error = 'Choose the CSV export, not the Excel or PDF one.'; return; }
+      this.busy = true;
+      try {
+        this.parsed = readEzee(parseCSV(await file.text()));
+        await this.buildCheck();
+        this.step = 2;
+      } catch (e) {
+        this.error = e.code ? friendlyError(e, 'check the file') : e.message;
+      }
+      this.busy = false;
+    },
+
+    // Works out what the save will do, without writing anything.
+    async buildCheck() {
+      const recs = this.parsed.records;
+      const codes = [...new Set(recs.map(r => r.propertyCode).filter(Boolean))];
+      const properties = codes.map(code => {
+        const p = this.properties.find(x => (x.code || '').toUpperCase() === code.toUpperCase());
+        return p ? { code, id: p.id, name: p.name, isNew: false } : { code, id: slug(code === 'DM' ? "D'Majestic" : code), name: code === 'DM' ? "D'Majestic" : '', isNew: true };
+      });
+      // Units already in the PMS, and alias room names (e.g. DM 1509-2 is DM 1509)
+      const unitsByProp = {};
+      for (const p of properties) unitsByProp[p.code] = p.isNew ? [] : await loadUnits(p.id);
+      const unitFor = (code, unitCode) => {
+        const list = unitsByProp[code] || [];
+        const direct = list.find(u => u.unitCode === unitCode || (u.aliases || []).includes(unitCode));
+        if (direct) return direct.unitCode;
+        if (code === 'DM') for (const [main, al] of Object.entries(DM_STARTER.aliases)) if (al.includes(unitCode)) return main;
+        return unitCode;
+      };
+      const months = {};
+      recs.forEach(r => { if (r.departureMonth) months[r.departureMonth] = (months[r.departureMonth] || 0) + 1; });
+      // Completed months are frozen: their bookings are skipped (corrections come later as adjustments, FEX-06)
+      const lockedMonths = new Set();
+      for (const p of properties.filter(p => !p.isNew)) {
+        const snap = await getDocs(query(collection(db, 'months'), where('propertyId', '==', p.id), where('status', '==', 'completed')));
+        snap.docs.forEach(d => lockedMonths.add(`${p.code}|${d.data().month}`));
+      }
+      // Which reservations already exist (to show new vs updated, and keep firstImportedAt)
+      const existing = new Set();
+      for (const p of properties.filter(p => !p.isNew)) for (const m of Object.keys(months)) {
+        const snap = await getDocs(query(collection(db, 'bookings'), where('propertyId', '==', p.id), where('departureMonth', '==', m)));
+        snap.docs.forEach(d => existing.add(d.id));
+      }
+      const toSave = [], locked = [], noUnit = [];
+      let cancelled = 0, ctrip = 0;
+      for (const r of recs) {
+        const prop = properties.find(p => p.code === r.propertyCode) || properties[0];
+        r.propertyId = prop?.id || null;
+        if (r.unitCode) { r.unitCode = unitFor(r.propertyCode, r.unitCode); r.unitId = unitIdOf(prop.id, r.unitCode); }
+        else r.unitId = null;
+        if (lockedMonths.has(`${r.propertyCode}|${r.departureMonth}`)) { locked.push(r); continue; }
+        if (r.status === 'cancelled') cancelled++;
+        else if (!r.unitId) noUnit.push(r);
+        if (r.status === 'active' && r.otaKey === 'ctrip') ctrip++;
+        r.isNew = !existing.has(r.reservationNo);
+        toSave.push(r);
+      }
+      const known = new Set(Object.values(unitsByProp).flat().map(u => u.id));
+      const newUnits = [...new Map(toSave.filter(r => r.unitId && r.status === 'active' && !known.has(r.unitId)).map(r => [r.unitId, r])).values()];
+      this.check = {
+        properties, toSave, locked, noUnit, cancelled, ctrip,
+        active: toSave.filter(r => r.status === 'active').length,
+        newCount: toSave.filter(r => r.isNew && r.status === 'active').length,
+        newUnits: newUnits.map(r => r.unitCode).sort(byUnit), newUnitRecs: newUnits,
+        months: Object.entries(months).sort().map(([month, count]) => ({ month, count }))
+      };
+    },
+
+    async save() {
+      const c = this.check;
+      this.busy = true; this.step = 3; this.progress = 0; this.error = '';
+      try {
+        const batchRef = doc(collection(db, 'importBatches'));
+        const months = [...new Set(c.toSave.map(r => r.departureMonth).filter(Boolean))].sort();
+        // 1. New properties (with the default OTA settings) and new units
+        let b = writeBatch(db);
+        for (const p of c.properties.filter(p => p.isNew)) {
+          b.set(doc(db, 'properties', p.id), { name: p.name.trim(), code: p.code, active: true, createdAt: serverTimestamp(), createdBy: me.user.uid });
+          b.set(doc(db, 'properties', p.id, 'rateVersions', '2000-01'), {
+            effectiveFrom: '2000-01', ota: DEFAULT_OTA, earlyCheckInToOwner: true, tourismTaxPerNight: 10,
+            reason: 'Default OTA settings, created on first eZee upload', createdBy: me.user.uid, createdByName: me.name, createdAt: serverTimestamp()
+          });
+          audit(b, me, { action: 'property.create', entity: `properties/${p.id}`, propertyId: p.id, reason: 'New property found in eZee upload' });
+        }
+        for (const r of c.newUnitRecs) {
+          const aliases = r.propertyCode === 'DM' ? (DM_STARTER.aliases[r.unitCode] || []) : [];
+          b.set(doc(db, 'units', r.unitId), { propertyId: r.propertyId, unitCode: r.unitCode, ezeeRoomMatch: r.unitCode, aliases, ownerId: null, active: true,
+            createdAt: serverTimestamp(), createdBy: me.user.uid });
+        }
+        await b.commit();
+        this.progress = 5;
+
+        // 2. Bookings: raw row kept as uploaded; names go to private/main (IT never sees them)
+        const list = c.toSave;
+        for (let i = 0; i < list.length; i += CHUNK) {
+          b = writeBatch(db);
+          for (const r of list.slice(i, i + CHUNK)) {
+            const { private: priv, propertyCode, isNew, ...data } = r;
+            data.importBatchId = batchRef.id;
+            data.lastImportedAt = serverTimestamp();
+            if (isNew) data.firstImportedAt = serverTimestamp();
+            b.set(doc(db, 'bookings', r.reservationNo), data, { merge: true });
+            b.set(doc(db, 'bookings', r.reservationNo, 'private', 'main'), priv, { merge: true });
+          }
+          await b.commit();
+          this.progress = Math.round(5 + 90 * Math.min(1, (i + CHUNK) / list.length));
+        }
+
+        // 3. The upload record and the audit line
+        b = writeBatch(db);
+        const active = list.filter(r => r.status === 'active');
+        const counts = { rows: this.parsed.records.length, bookings: active.length, cancelled: c.cancelled,
+          noUnit: c.noUnit.length, ctripNeedingAmount: c.ctrip, created: active.filter(r => r.isNew).length, updated: active.filter(r => !r.isNew).length, lockedSkipped: c.locked.length };
+        b.set(batchRef, { kind: 'ezee', fileName: this.fileName, filePath: null, months, counts, result: 'ok',
+          propertyIds: [...new Set(list.map(r => r.propertyId))], uploadedBy: me.user.uid, uploadedByName: me.name, uploadedAt: serverTimestamp() });
+        audit(b, me, { action: 'ezee.upload', entity: `importBatches/${batchRef.id}`, propertyId: c.properties[0]?.id || null, month: months.join(','),
+          changes: [{ field: 'bookings', old: null, new: counts.bookings }], reason: this.fileName });
+        await b.commit();
+        this.progress = 100;
+        this.done = {
+          propertyId: c.properties[0]?.id, months,
+          message: `Saved ${counts.bookings} bookings (${counts.created} new, ${counts.updated} updated)` +
+            (c.newUnits.length ? `. ${c.newUnits.length} new units need setting up on Month-end payout.` : '.') +
+            (c.ctrip ? ` ${c.ctrip} Ctrip bookings need their Trip.com amount (profit-share units only).` : '')
+        };
+        this.step = 4;
+        this.properties = await loadProperties();
+        await this.loadHistory();
+      } catch (e) {
+        this.error = friendlyError(e, 'save the upload') + ' Nothing is lost: upload the same file again and it picks up where it stopped.';
+        this.step = 2;
+      }
+      this.busy = false;
+    },
+
+    // Q-16: short-term stays with checkout on the date (yesterday by default, Malaysia time)
+    async dailyExport() {
+      this.busy = true; this.exportNote = ''; this.error = '';
+      try {
+        const snap = await getDocs(query(collection(db, 'bookings'), where('departure', '==', this.exportDate)));
+        let rows = snap.docs.map(d => d.data()).filter(b => b.status !== 'cancelled' && Number(b.nights) < 30
+          && (this.exportProperty === 'all' || b.propertyId === this.exportProperty));
+        const propName = id => this.properties.find(p => p.id === id)?.name || id;
+        rows.sort((a, b) => propName(a.propertyId).localeCompare(propName(b.propertyId)) || byUnit(a.unitCode, b.unitCode));
+        const setups = {};
+        for (const pid of new Set(rows.map(b => b.propertyId))) setups[pid] = await loadSetup(pid, this.exportDate.slice(0, 7));
+        const aoa = [['Property', 'Unit', 'Reservation No', 'Source', 'Arrival', 'Departure', 'Nights', 'Room charges (excl. SST)', 'SST', 'Cleaning fee',
+          'Tourism tax', 'Total (eZee)', 'Method', 'PTO (before fees)']];
+        for (const b of rows) {
+          const s = setups[b.propertyId], u = s.units.find(x => x.id === b.unitId);
+          const p = bookingPTO(b, effectiveRates(s.rates, u?.terms));
+          aoa.push([propName(b.propertyId), b.unitCode || '', b.reservationNo, b.source, b.arrival, b.departure, b.nights,
+            r2(b.allRoomCharges), r2(b.sst), r2(b.cleaningFee), r2(b.tourismTax), r2(b.totalInclTax), p.method, r2(p.pto)]);
+        }
+        if (rows.length === 0) { this.exportNote = 'No short-term checkouts on that date.'; }
+        else { download(`Widebed daily export ${this.exportDate}.csv`, toCSV(aoa)); this.exportNote = `${rows.length} stays exported.`; }
+      } catch (e) { this.error = friendlyError(e, 'make the export'); }
+      this.busy = false;
+    }
+  }));
+  Alpine.start();
+</script>
+</body>
+</html>

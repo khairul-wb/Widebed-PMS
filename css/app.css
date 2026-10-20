@@ -212,3 +212,30 @@ textarea.input { height: 72px; padding: 10px 12px; resize: vertical; }
 .role-list { display: grid; gap: 8px; font-size: 13px; }
 .role-list div { display: flex; gap: 8px; }
 .role-list b { min-width: 92px; }
+
+/* ---------- Finance pages ---------- */
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table td.num, .table th.num { text-align: right; }
+.table tfoot td { font-weight: 600; border-top: 1px solid var(--border); background: #FAFBFC; }
+.neg-amt { color: var(--red); }
+.drawer.wide { width: 880px; }
+.dropzone { border: 2px dashed var(--border); border-radius: var(--radius); background: var(--surface); padding: 36px 24px; text-align: center; color: var(--text-2); cursor: pointer; }
+.dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone b { color: var(--text); display: block; font-size: 15px; margin-bottom: 4px; }
+.progress { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 12px 0 6px; }
+.progress > div { height: 100%; background: var(--accent); transition: width .2s; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 12px 0; }
+.summary-grid div { background: #FAFBFC; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.summary-grid b { display: block; font-size: 20px; }
+.summary-grid span { color: var(--muted); font-size: 12px; }
+.stmt-lines .row { padding: 6px 0; }
+.stmt-lines .row.total { font-weight: 700; border-top: 1px solid var(--border); padding-top: 10px; }
+.stmt-lines .row.sub { color: var(--text-2); padding-left: 14px; }
+.inline-input { width: 110px; height: 32px; padding: 0 8px; text-align: right; }
+.confirm-box { border: 1px solid var(--amber); background: var(--amber-soft); border-radius: 10px; padding: 14px 16px; margin-top: 12px; }
+.grid-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.tag-est { font-size: 11px; color: var(--amber); font-weight: 600; }
+@media (max-width: 720px) { .grid-fields { grid-template-columns: 1fr; } .drawer.wide { width: 100%; } }
+.row .r.wrap { white-space: normal; text-align: right; min-width: 0; }
+.row > span:first-child { flex-shrink: 0; max-width: 50%; }
+button.link { background: none; border: 0; padding: 0; }

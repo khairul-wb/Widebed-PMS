@@ -80,7 +80,7 @@
             <div class="grid-2">
               <div class="stack">
                 <section class="card">
-                  <div class="card-head"><h2>Month-end progress</h2><a href="#" class="link" @click.prevent="soon('Month-end payout')">Open Month-end payout ›</a></div>
+                  <div class="card-head"><h2>Month-end progress</h2><a :href="`month-end.html?property=${propertyId === 'all' ? '' : propertyId}&month=${month}`" class="link">Open Month-end payout ›</a></div>
                   <div class="steps">
                     <template x-for="s in data.steps" :key="s.n">
                       <div class="step" :class="{ done: s.done, current: s.current }">
@@ -91,7 +91,7 @@
                   <div class="note" x-text="data.progressNote"></div>
                 </section>
                 <section class="card">
-                  <div class="card-head"><h2>Statements by status</h2><a href="#" class="link" @click.prevent="soon('Month-end payout')">View all ›</a></div>
+                  <div class="card-head"><h2>Statements by status</h2><a :href="`month-end.html?property=${propertyId === 'all' ? '' : propertyId}&month=${month}`" class="link">View all ›</a></div>
                   <div class="rows">
                     <div class="row"><span>Fixed rent</span><span class="pill blue" x-text="data.byStatus.fixedRent"></span></div>
                     <div class="row"><span>Draft</span><span class="pill grey" x-text="data.byStatus.draft"></span></div>
@@ -113,7 +113,7 @@
                   </div>
                 </section>
                 <section class="card">
-                  <div class="card-head"><h2>Expenses added this month</h2><a href="#" class="link" @click.prevent="soon('Expenses & Reimbursements')">Expenses ›</a></div>
+                  <div class="card-head"><h2>Expenses added this month</h2><a :href="`expenses.html?property=${propertyId === 'all' ? '' : propertyId}&month=${month}`" class="link">Expenses ›</a></div>
                   <div class="rows">
                     <template x-for="e in data.recentExpenses" :key="e.id">
                       <div class="row">
@@ -142,7 +142,7 @@
                   </div>
                 </section>
                 <section class="card">
-                  <div class="card-head"><h2>Month-end at a glance</h2><a href="#" class="link" @click.prevent="soon('Month-end payout')">Month-end payout ›</a></div>
+                  <div class="card-head"><h2>Month-end at a glance</h2><a :href="`month-end.html?property=${propertyId === 'all' ? '' : propertyId}&month=${month}`" class="link">Month-end payout ›</a></div>
                   <div class="steps">
                     <template x-for="s in data.steps" :key="s.n">
                       <div class="step" :class="{ done: s.done, current: s.current }">
@@ -175,10 +175,10 @@
           <section class="card quick">
             <div class="card-head"><h2>Quick actions</h2></div>
             <div class="actions" x-show="view === 'finance'">
-              <button class="btn btn-primary" @click="soon('Upload eZee report')">Upload eZee report</button>
-              <button class="btn" @click="soon('Add expense')">Add expense</button>
-              <button class="btn" @click="soon('Month-end payout')">Open Month-end payout</button>
-              <button class="btn" @click="soon('Daily export')">Download daily export</button>
+              <a class="btn btn-primary" href="upload.html">Upload eZee report</a>
+              <a class="btn" :href="`expenses.html?month=${month}&add=1`">Add expense</a>
+              <a class="btn" :href="`month-end.html?month=${month}`">Open Month-end payout</a>
+              <a class="btn" href="upload.html#daily">Download daily export</a>
             </div>
             <div class="actions" x-show="view === 'director'">
               <button class="btn btn-primary" @click="soon('Add property')">Add property</button>

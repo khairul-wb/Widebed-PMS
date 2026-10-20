@@ -25,3 +25,13 @@ export const stamp = ts => {
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
 };
+// Plain 2-decimal amount with a real minus sign, for tables.
+export const amt = n => (n == null || n === '' ? '' : (Number(n) < -0.004 ? '−' : '') + Math.abs(Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+export const pct = x => `${+(Number(x || 0) * 100).toFixed(2)}%`;
+export const dmy = d => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '';
+// Today in Malaysia, as YYYY-MM-DD, moved by `days`.
+export function dayOffset(days) {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
+  now.setDate(now.getDate() + days);
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}

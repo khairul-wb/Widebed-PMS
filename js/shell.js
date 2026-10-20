@@ -9,7 +9,7 @@ const HR_STAFF = { label: 'HR', items: [P('Attendance SOP'), P('Advance SOP'), P
 export const NAV = {
   finance: [
     { items: [P('Dashboard', 'dashboard.html'), P('Portfolio')] },
-    { label: 'Finance', items: [P('Upload eZee report'), P('Expenses & Reimbursements'), P('Month-end payout'),
+    { label: 'Finance', items: [P('Upload eZee report', 'upload.html'), P('Expenses & Reimbursements', 'expenses.html'), P('Month-end payout', 'month-end.html'),
       P('Invoices & Receipts'), P('Offline payments'), P('Sales leads')] },
     { label: 'Operations', items: [P('Issues')] },
     { label: 'Playbook', items: [P('Onboarding'), P('Business Model')] },
@@ -17,7 +17,7 @@ export const NAV = {
   ],
   director: [
     { items: [P('Dashboard', 'dashboard.html'), P('Tasks'), P('Portfolio')] },
-    { label: 'Finance', items: [P('Upload eZee report'), P('Expenses & Reimbursements'), P('Month-end payout'),
+    { label: 'Finance', items: [P('Upload eZee report', 'upload.html'), P('Expenses & Reimbursements', 'expenses.html'), P('Month-end payout', 'month-end.html'),
       P('Invoices & Receipts'), P('Offline payments')] },
     { label: 'Operations', items: [P('Issues'), P('Sales leads'), P('Booking forms')] },
     { label: 'Procurement', items: [P('New listings'), P('Forms')] },
